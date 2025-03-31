@@ -1,0 +1,328 @@
+---
+title: "Paper Package"
+author: "Rasa Gulbinaite"
+date: "Generated on: `r date()`"
+output: 
+  html_document:
+    theme: united
+    highlight: tango
+    toc: true
+    code_folding: show
+    toc_float: 
+        collapsed: false
+        smooth_scroll: true
+    toc_depth: 2
+    number_sections: true
+---
+
+# . General description of the task
+
+Paper package for the manuscript **"Individual alpha peak frequency predicts 10 Hz flicker effects on selective attention"** by Gulbinaite, van Viegen, Wieling, Cohen, and VanRullen.
+
+*The task*: modified version of the Eriksen flanker task with target and flankers flickering at different frequencies.
+
+Letters used in the task: E, F, M, N. Two letters were mapped on each hand. Proportion of congruent trials (all letters the same) and incongruent trials (central letter different) were kept at 50%. 
+
+On each trial targets and flankers flickered at one of 3 different frequencies, such that the following combinations of tagging frequencies were used:
+
+(1) 10Hz  T / 7.5Hz F  (T = target; F = flankers)
+(2) 10Hz  T /15Hz F 
+(3) 7.5Hz T / 10Hz F
+(4) 15Hz  T / 10Hz F 
+
+# . Loading the data, specifying the factors
+
+All numerical predictors (theta power, SSEP amplitude for target and flanker stimuli) were normalized to a Gaussian distribution by ranking the data, scaling between -1 and 1, and taking the inverse hyperbolic tangent (also known as Fisher transform; Cohen "MATLAB for Brain and Cognitive Scientists", MIT Press, 2017). 
+```{r}
+
+setwd('C:/Users/gulbinaite/Desktop/')
+
+dat <- read.table("Gulbinaite_et_al_2017.txt", header=TRUE,as.is=TRUE)
+
+str(dat)
+```
+```{r}
+names(dat) <- c(
+    "Subj",
+    "congr",            # 1: congruent; 0: incongruent
+    "freq",             # 1: 10 Hz target; 0: 10 Hz flanker
+    "tFrq",             # target frequency in Hz; 3 levels: 7, 10, 15 Hz
+    "fFrq",             # flanker frequency in Hz; 3 levels: 7, 10, 15 Hz
+    "RT",		  #	
+    "amplFfull_norm",   # SSEP amplitude flankers (based on full trial: 500-2600ms), normalized 
+    "amplTfull_norm",   # SSEP amplitude targets  (based on full trial: 500-2600ms), normalized 
+    "amplFpost_norm",   # SSEP amplitude flankers (based on post-stim:  2000-2600ms), normalized
+    "amplTpost_norm",   # SSEP amplitude targets  (based on post-stim:  2000-2600ms), normalized
+    "amplFpre_norm",    # SSEP amplitude flankers (based on post-stim:  1400-2000ms), normalized
+    "amplTpre_norm",    # SSEP amplitude targets  (based on post-stim:  1400-2000ms), normalized
+    "alphaABS",         # ABS distance from occ alpha peak to 10 Hz 
+    "alpha",	          # alpha  peak frequency
+    "cond",		          # cond: 1 = 10T/7.5F; 2 = 10T/15F; 3 = 7.5T/10F; 4 = 15T/10F 	
+    "theta_norm"        # theta band power, normalized
+   )   
+	
+# Log-transform RTs
+dat$RT.log <- log(dat$RT)
+
+
+# Factors
+dat$Subj <- as.factor(dat$Subj)
+dat$freq <- as.factor(dat$freq)
+
+dat$tFrq <- as.factor(dat$tFrq)
+dat$fFrq <- as.factor(dat$fFrq)
+
+dat$congr <- as.factor(dat$congr)
+dat$cond <- as.factor(dat$cond)
+
+```
+
+# . Loading necessary libraries
+
+```{r, warning=FALSE}
+library(lme4)
+library(car)
+library(sjPlot)
+```
+# . Can congruency alone explain log-RT variability or adding condition as an additional fixed factor explains more? 
+
+```{r}
+lme1 <- lmer(RT.log ~ congr + (1 | Subj), data=dat, REML = FALSE)
+lme2 <- lmer(RT.log ~ congr + cond + (1 | Subj), data=dat, REML = FALSE)
+
+anova(lme1, lme2)
+```
+**INTERIM CONCLUSION:** Yes, a model with condition added is preferred, i.e. lme2 is the best-fitting model so far.
+
+## . Does the interaction between condition and congruency explain more variance, or just the main effects are enough?
+
+```{r}
+lme2.a <- lmer(RT.log ~ congr*cond + (1 | Subj), data=dat, REML = FALSE)
+
+anova(lme2, lme2.a)
+```
+**INTERIM CONCLUSION:** Just the main effects of congruency and condition are enough.
+
+## . Are the random effects of congruency and/or condition necessary?
+
+```{r}
+lme2 <- lmer(RT.log ~ congr + cond + (1 | Subj), data=dat, REML = TRUE)
+lme2.b <- lmer(RT.log ~ congr + cond + (1 + cond| Subj), data=dat, REML = TRUE)
+lme2.c <- lmer(RT.log ~ congr + cond + (1 + congr| Subj), data=dat, REML = TRUE)
+lme2.d <- lmer(RT.log ~ congr + cond + (1 + congr + cond| Subj), data=dat, REML = TRUE)
+
+anova(lme2.b, lme2, refit = FALSE)
+anova(lme2.c, lme2, refit = FALSE)
+anova(lme2.d, lme2, refit = FALSE)
+anova(lme2.b, lme2.c, refit = FALSE)
+anova(lme2.b, lme2.d, refit = FALSE)
+
+```
+**INTERIM CONCLUSION:** lme2.b is the best model so far, including a random effect of conidtion improves the model fit. 
+Adding both condition and congruency (lme2.d) is not superior to having just condition (simpler model, i.e. **lme2.b**).
+
+# . Does adding distance to individual alpha peak frequency (alphaABS) explain more variance?
+
+alphaABS = ABS(IAF-10) where IAF is individual alpha peak frequency at occipital alpha sources (see Methods section of the paper).
+
+```{r}
+lme2.b <- lmer(RT.log ~ congr + cond + (1 + cond| Subj), data=dat, REML = FALSE)
+lme3 <- lmer(RT.log ~ congr + cond + alphaABS + (1 + cond| Subj) , data=dat, REML = FALSE)
+  
+anova(lme2.b, lme3)
+```
+**INTERIM CONCLUSION:** Adding distance to the occipital alpha peak (alphaABS) improved the model fit. 
+**lme3** is the best-fitting model so far.
+
+## . Is the main effect of alphaABS sufficient or the interaction with congruency and/or condition explains additional variance? 
+
+```{r}
+
+lme3.a <- lmer(RT.log ~ congr*alphaABS + cond*alphaABS + (1 + cond| Subj), data=dat, REML = FALSE)
+lme3.b <- lmer(RT.log ~ congr + cond*alphaABS + (1 + cond| Subj), data=dat, REML = FALSE)
+lme3.c <- lmer(RT.log ~ congr*alphaABS + cond + (1 + cond| Subj), data=dat, REML = FALSE)
+
+anova(lme3, lme3.a) 
+anova(lme3, lme3.b) 
+anova(lme3, lme3.c)
+
+```
+**INTERIM CONCLUSION:** Adding alphaABS interaction with congruency improved the model fit. 
+**lme3.c** is the best-fitting model so far.
+
+# . Does adding post-stimulus or pre-stimulus SSEP target and flankers' amplitude improve log-RT predictability?
+
+Post-stimulus SSEP amplitudes for target and flankers: SSEP amplitude in a 2000-2600 ms window (where 2000 ms is the stimulus onset).
+Pre-stimulus SSEP amplitudes: SSEP amplitude in a 1400-2000 ms window (i.e. prior to imperative stimulus). 
+
+```{r}
+lme4 <- lmer(RT.log ~ congr*alphaABS + cond + amplTpost_norm + (1 + cond| Subj) , data=dat, REML = FALSE)
+lme4.a <- lmer(RT.log ~ congr*alphaABS + cond + amplTpost_norm + amplFpost_norm + (1 + cond| Subj) , data=dat, REML = FALSE)
+lme4.1 <- lmer(RT.log ~ congr*alphaABS + cond + amplTpre_norm + amplFpre_norm + (1 + cond| Subj), data=dat, REML = FALSE)
+
+anova(lme3.c, lme4)
+anova(lme4, lme4.a)
+anova(lme4.a, lme4.1)
+```
+**INTERIM CONCLUSION:** Yes, adding post-stimulus SSEP amplitude for targets and flankers improves the model fit. 
+Adding pre-stimulus SSEP amplitude also improves the model fit when compared to the simpler model 
+(i.e. without single-trial brain responses to flicker), however post-stimulus as compared to pre-stimulus SSEP amplitudes are better predictors. 
+**lme4** is the best model so far.
+
+
+## . Are random effects of SSEP target and flankers amplitude necessary?
+
+```{r}
+lme4.a <- lmer(RT.log ~ congr*alphaABS + cond + amplTpost_norm + amplFpost_norm + (1 + cond| Subj) , data=dat, REML = TRUE)
+
+lme4.b <- lmer(RT.log ~ congr*alphaABS + cond + amplTpost_norm + amplFpost_norm + (1 + cond| Subj) + (0 + amplTpost_norm|Subj), data=dat, REML = TRUE)
+lme4.c <- lmer(RT.log ~ congr*alphaABS + cond + amplTpost_norm + amplFpost_norm + (1 + cond + amplTpost_norm|Subj), data=dat, REML = TRUE)
+lme4.d <- lmer(RT.log ~ congr*alphaABS + cond + amplTpost_norm + amplFpost_norm + (1 + cond| Subj) + (0 + amplTpost_norm|Subj)+ (0 + amplFpost_norm|Subj), data=dat, REML = TRUE)
+lme4.e <- lmer(RT.log ~ congr*alphaABS + cond + amplTpost_norm + amplFpost_norm + (1 + cond + amplFpost_norm| Subj) + (0 + amplTpost_norm|Subj), data=dat, REML = TRUE)
+lme4.f <- lmer(RT.log ~ congr*alphaABS + cond + amplTpost_norm + amplFpost_norm + (1 + cond | Subj) + (0 + amplTpost_norm + amplFpost_norm|Subj), data=dat, REML = TRUE)
+
+anova(lme4.a,lme4.b,refit=FALSE)
+anova(lme4.b,lme4.c,refit=FALSE)
+anova(lme4.b,lme4.d,refit=FALSE)
+anova(lme4.d,lme4.e,refit=FALSE)
+anova(lme4.d,lme4.f,refit=FALSE)
+
+```
+**INTERIM CONCLUSION:** Yes, random effect of both SSEP amplitude for targets and flankers, 
+and covariance between them improves the model fit. **lme4.f** is the best-fitting model so far.
+
+
+## . Does target and flankers' SSEP amplitude interaction with congruency explain more variance?
+```{r, fig.width=5, fig.height=5}
+lme4.f <- lmer(RT.log ~ congr*alphaABS + cond + amplTpost_norm + amplFpost_norm + (1 + cond | Subj) + (0 + amplTpost_norm + amplFpost_norm|Subj), data=dat, REML = FALSE)
+
+lme5.a <- lmer(RT.log ~ congr*alphaABS + cond + amplTpost_norm*congr + amplFpost_norm*congr + (1 + cond| Subj) + (0 + amplTpost_norm + amplFpost_norm|Subj), data=dat, REML = FALSE)
+lme5.b <- lmer(RT.log ~ congr*alphaABS + cond + amplTpost_norm*congr + amplFpost_norm + (1 + cond| Subj) + (0 + amplTpost_norm + amplFpost_norm|Subj), data=dat, REML = FALSE)
+lme5.c <- lmer(RT.log ~ congr*alphaABS + cond + amplTpost_norm + amplFpost_norm*congr + (1 + cond| Subj) + (0 + amplTpost_norm + amplFpost_norm|Subj), data=dat, REML = FALSE)
+
+anova(lme4.f, lme5.a) 
+anova(lme4.f, lme5.b)
+anova(lme4.f, lme5.c)
+```
+**INTERIM CONCLUSION:** SSEP amplitude interaction with congruency is not necessary. **lme4.f** is the best-fitting model so far.
+
+## . Does tagret and flankers' SSEP amplitude interaction with condition explain more variance?
+
+```{r}
+
+lme6.a <- lmer(RT.log ~ congr*alphaABS + amplTpost_norm*cond + amplFpost_norm*cond + (1 + cond| Subj) + (0 + amplTpost_norm + amplFpost_norm|Subj), data=dat, REML = FALSE)
+lme6.b <- lmer(RT.log ~ congr*alphaABS + amplTpost_norm*cond + amplFpost_norm + (1 + cond| Subj) + (0 + amplTpost_norm + amplFpost_norm|Subj), data=dat, REML = FALSE)
+lme6.c <- lmer(RT.log ~ congr*alphaABS + amplTpost_norm + amplFpost_norm*cond + (1 + cond| Subj) + (0 + amplTpost_norm + amplFpost_norm|Subj), data=dat, REML = FALSE)
+
+anova(lme4.f, lme6.a) 
+anova(lme4.f, lme6.b)
+anova(lme4.f, lme6.c)
+
+anova(lme6.a, lme6.b)
+anova(lme6.a, lme6.c)
+
+```
+**INTERIM CONCLUSION:** SSEP amplitude interaction with condition is necessary. **lme6.a** is the best-fitting model so far. 
+
+## . Are additional random effects of interaction between SSEP target amplitude (and/or SSEP flankers amplitude) and condition necessary?
+```{r, warning=FALSE}
+lme6.a <- lmer(RT.log ~ congr*alphaABS + amplTpost_norm*cond + amplFpost_norm*cond + (1 + cond| Subj) + (0 + amplTpost_norm + amplFpost_norm|Subj), data=dat, REML = TRUE)
+
+lme6.a1 <- lmer(RT.log ~ congr*alphaABS + amplTpost_norm*cond + amplFpost_norm*cond + (1 + cond*amplTpost_norm| Subj) + (0  + amplFpost_norm|Subj), data=dat, REML = TRUE)
+lme6.a2 <- lmer(RT.log ~ congr*alphaABS + amplTpost_norm*cond + amplFpost_norm*cond + (1 + cond*amplFpost_norm| Subj) + (0  + amplTpost_norm|Subj), data=dat, REML = TRUE)
+
+```
+**INTERIM CONCLUSION:** Just the random effect of target and flanker SSEP amplitude and covariance between them is sufficient. The more complex models do not converge. 
+
+# . Does adding normalized theta power explain more? 
+
+Inclusion of theta power as an additional factor is motivated by the fact that Eriksen flanker task is a conflict task and elicits strong mid-frontal theta power (for a review see, Cohen 2014 TINS; Cavanagh & Frank, 2014, TICS). Moreover, theta power is correlated with single-trial RTs (Cohen & Cavanagh, 2011; Gulbinaite et al., 2014).
+
+```{r}
+lme7 <- lmer(RT.log ~ congr*alphaABS + amplTpost_norm*cond + amplFpost_norm*cond + theta_norm + (1 + cond| Subj) + (0 + amplTpost_norm + amplFpost_norm|Subj), data=dat, REML = FALSE)
+anova(lme6.a, lme7) 
+
+```
+**INTERIM CONCLUSION:** Yes, adding theta power as an additional fixed factor improves the model fit. **lme7** is the preferred model.
+
+## . Is the random effect of theta power necessary? 
+
+```{r, warning=FALSE}
+lme7 <- lmer(RT.log ~ congr*alphaABS + amplTpost_norm*cond + amplFpost_norm*cond + theta_norm + (1 + cond| Subj) + (0 + amplTpost_norm + amplFpost_norm|Subj), data=dat, REML = TRUE)
+lme7.a <- lmer(RT.log ~ congr*alphaABS + amplTpost_norm*cond + amplFpost_norm*cond + theta_norm + (1 + cond| Subj) + (0 + amplTpost_norm + amplFpost_norm|Subj) + (0 + theta_norm|Subj), data=dat, REML = TRUE)
+lme7.b <- lmer(RT.log ~ congr*alphaABS + amplTpost_norm*cond + amplFpost_norm*cond + theta_norm + (1 + cond + theta_norm| Subj) + (0 + amplTpost_norm + amplFpost_norm|Subj), data=dat, REML = TRUE)
+lme7.c <- lmer(RT.log ~ congr*alphaABS + amplTpost_norm*cond + amplFpost_norm*cond + theta_norm + (1 + cond| Subj) + (0 + amplTpost_norm + amplFpost_norm + theta_norm|Subj), data=dat, REML = TRUE)
+
+anova(lme7, lme7.a, refit = FALSE)
+anova(lme7.a, lme7.b, refit = FALSE)
+anova(lme7.a, lme7.c, refit = FALSE)
+
+```
+**INTERIM CONCLUSION:** Yes, random effect of theta power improves the model fit. **lme7.a** is the best-fitting model so far. 
+
+## . Is the interaction between theta and condition and/or theta and congruency necessary, or just the main effect is sufficient?
+```{r}
+lme7.a <- lmer(RT.log ~ congr*alphaABS + amplTpost_norm*cond + amplFpost_norm*cond + theta_norm + (1 + cond| Subj) + (0 + amplTpost_norm + amplFpost_norm|Subj) + (0 + theta_norm|Subj), data=dat, REML = FALSE)
+lme8.a <- lmer(RT.log ~ congr*alphaABS + amplTpost_norm*cond + amplFpost_norm*cond + theta_norm*congr + (1 + cond| Subj) + (0 + amplTpost_norm + amplFpost_norm|Subj) + (0 + theta_norm|Subj), data=dat, REML = FALSE)
+lme8.b <- lmer(RT.log ~ congr*alphaABS + amplTpost_norm*cond + amplFpost_norm*cond + theta_norm*cond + (1 + cond| Subj) + (0 + amplTpost_norm + amplFpost_norm|Subj) + (0 + theta_norm|Subj), data=dat, REML = FALSE)
+
+anova(lme7.a, lme8.a)
+anova(lme7.a, lme8.b)
+
+```
+**INTERIM CONCLUSION:** Only main effect of theta is enough, **lme7.a** is the best-fitting model.
+
+# . Is alpha peak frequency rather than the distance to 10 Hz a better predictor for the log-RTs?
+
+```{r}
+lme9 <- lmer(RT.log ~ congr*alpha + amplTpost_norm*cond + amplFpost_norm*cond + theta_norm + (1 + cond| Subj) + (0 + amplTpost_norm + amplFpost_norm|Subj) + (0 + theta_norm|Subj), data=dat, REML = FALSE)
+anova(lme7.a,lme9)
+
+```
+**INTERIM CONCLUSION:** The model with alpha peak frequency rather than the distance to 10 Hz is significantly less preferred. 
+Still **lme7.a** is so far the best-fitting model.
+
+# . Summary of the best-fitting model
+
+Note that cond*amplTpost_norm is is equivalent to cond + amplTpost_norm:cond. 
+However, this notation is preferred when intepreting statistical significance of theoretically important fixed effects.
+
+```{r}
+lme7.a <- lmer(RT.log ~ congr*alphaABS + cond + amplTpost_norm:cond + amplFpost_norm:cond + theta_norm + (1 + cond| Subj) + (0 + amplTpost_norm + amplFpost_norm|Subj)+ (0 + theta_norm|Subj), data=dat, REML = TRUE)
+summary(lme7.a)
+
+sjp.setTheme(geom.label.angle = 0)
+sjp.lmer(lme7.a,type = "fe", axis.lim = c(-0.15, 0.15))
+```
+
+# . Model validation
+
+```{r, fig.width=5, fig.height=5}
+qqp(resid(lme7.a))
+plot(fitted(lme7.a),resid(lme7.a))
+```
+
+**INTERIM CONCLUSION:** Plotting residuals against the predicted values. Residuals of our best-fitting model followed a normal distribution.
+
+# . Model critisism
+
+Removing 1.5% pf the data (potential outliers). 
+```{r, fig.width=5, fig.height=5}
+
+dat2 = dat[abs(scale(resid(lme7.a))) < 2.5,]
+(1-nrow(dat2)/nrow(dat))*100
+```
+
+```{r, fig.width=5, fig.height=5}
+lme7.a2 <- lmer(RT.log ~ congr*alphaABS + cond + amplTpost_norm:cond + amplFpost_norm:cond + theta_norm + (1 + cond| Subj) + (0+amplTpost_norm|Subj) + (0+amplFpost_norm|Subj)+ (0 + theta_norm|Subj), data=dat2, REML = TRUE)
+
+
+summary(lme7.a2)
+```
+
+```{r, fig.width=5, fig.height=5}
+qqp(resid(lme7.a2))
+plot(fitted(lme7.a2),resid(lme7.a2))
+```
+
+**CONCLUSION:** Removing 1.5% of the data did not compromise the model fit, and the significance of the fixed effects did not change.
