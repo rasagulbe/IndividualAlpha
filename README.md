@@ -1,5 +1,5 @@
 # IndividualAlpha
-Code accompanying publication on flicker stimulation effects.
+Code accompanying publication on individual differences in cognitive effects of flicker stimulation:
 
 ## The code accompanying the paper "Individual Alpha Peak Frequency Predicts 10 Hz Flicker Effects on Selective Attention"
 
